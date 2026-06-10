@@ -1,0 +1,1557 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>公車班表乘車推算</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    .active-scale:active { transform: scale(0.98); }
+    .soft-shadow { box-shadow: 0 12px 36px rgba(15, 23, 42, 0.08); }
+    summary::-webkit-details-marker { display: none; }
+    details[open] .details-chevron { transform: rotate(180deg); }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900 font-sans antialiased">
+  <header class="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200">
+    <div class="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
+      <div>
+        <h1 class="text-lg font-black tracking-wide text-slate-950">
+          <i class="fa-solid fa-bus-simple text-indigo-600 mr-2"></i>公車什麼時候來
+        </h1>
+        <p class="text-xs text-slate-500 mt-0.5">用既有班表先推算上車與到站時間</p>
+      </div>
+      <span id="connection-status" class="shrink-0 text-xs px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 font-semibold">
+        未連線
+      </span>
+    </div>
+  </header>
+
+  <main class="max-w-3xl mx-auto px-4 pt-4 pb-28 space-y-4">
+    <section class="bg-white border border-slate-200 rounded-lg soft-shadow overflow-hidden">
+      <div class="p-4 border-b border-slate-100 space-y-3">
+        <h2 class="font-bold text-slate-950">常用行程</h2>
+        <div class="grid grid-cols-[1fr_auto] gap-2">
+          <select id="saved-trip-select" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm font-bold text-slate-700 focus:outline-indigo-500">
+            <option value="">常用行程</option>
+          </select>
+          <button id="btn-delete-saved-trip" class="active-scale h-11 w-11 rounded-lg bg-rose-50 text-rose-600" title="刪除選取的常用行程">
+            <i class="fa-regular fa-trash-can"></i>
+          </button>
+        </div>
+      </div>
+
+      <details>
+        <summary class="px-4 py-3 flex items-center justify-between cursor-pointer">
+          <div>
+            <h2 class="font-bold text-slate-950">路線查詢</h2>
+            <p class="text-xs text-slate-500 mt-0.5">先選縣市載入路線，再用文字篩選選單</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button id="btn-refresh-route" class="active-scale hidden h-9 w-9 rounded-full bg-slate-100 text-slate-600">
+              <i class="fa-solid fa-rotate"></i>
+            </button>
+            <i class="details-chevron fa-solid fa-chevron-down text-xs text-slate-400 transition-transform duration-200"></i>
+          </div>
+        </summary>
+
+        <div class="p-4 pt-0 space-y-3">
+          <div class="grid grid-cols-[1fr_auto] gap-2">
+            <select id="city-select" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm focus:outline-indigo-500"></select>
+            <button id="btn-search-route" class="active-scale rounded-lg bg-indigo-600 px-4 py-3 text-sm font-bold text-white">
+              載入
+            </button>
+          </div>
+          <div class="grid grid-cols-[minmax(0,1fr)_minmax(120px,160px)] gap-2">
+            <label class="block space-y-1.5">
+              <span class="text-xs font-bold text-slate-600">路線選單</span>
+              <select id="route-select" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm focus:outline-indigo-500">
+                <option value="">請先載入縣市路線</option>
+              </select>
+            </label>
+            <label class="block space-y-1.5">
+              <span class="text-xs font-bold text-slate-600">文字篩選</span>
+              <input id="route-keyword" type="text" inputmode="text" placeholder="例如：2、紅幹線、307" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm focus:outline-indigo-500">
+            </label>
+          </div>
+          <div id="route-results" class="text-xs text-slate-500">選擇縣市後按「載入」，路線會以分組選單呈現。</div>
+        </div>
+      </details>
+    </section>
+
+    <section id="planner-section" class="bg-white border border-slate-200 rounded-lg soft-shadow overflow-hidden">
+      <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between gap-3">
+        <div class="min-w-0">
+          <h2 class="font-bold text-slate-950">設定</h2>
+          <p id="selected-route-label" class="text-xs text-slate-500 mt-0.5 truncate">尚未選擇路線</p>
+        </div>
+      </div>
+
+      <div class="p-4 space-y-4">
+        <div class="grid grid-cols-[minmax(0,1fr)_132px] gap-3">
+          <label class="space-y-1.5">
+            <span class="text-xs font-bold text-slate-600">乘車日期</span>
+            <input id="target-date" type="date" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm focus:outline-indigo-500">
+          </label>
+          <label class="space-y-1.5">
+            <span class="text-xs font-bold text-slate-600">最早上車時間</span>
+            <input id="earliest-time" type="time" value="07:00" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm focus:outline-indigo-500">
+          </label>
+        </div>
+
+        <div id="direction-tabs"></div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <label class="space-y-1.5">
+            <span class="text-xs font-bold text-slate-600">上車站</span>
+            <div class="flex gap-2">
+              <button id="btn-nearest-stop" class="active-scale shrink-0 rounded-lg bg-indigo-50 px-3 py-3 text-sm font-black text-indigo-700 border border-indigo-100" title="用定位選最近站">
+                <i class="fa-solid fa-location-crosshairs"></i>
+              </button>
+              <select id="boarding-stop" class="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm focus:outline-indigo-500"></select>
+            </div>
+            <div id="nearest-stop-hint" class="text-[11px] text-slate-500">可用定位優先選擇最接近的上車站</div>
+          </label>
+          <label class="space-y-1.5">
+            <span class="text-xs font-bold text-slate-600">目的站</span>
+            <select id="arrival-stop" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm focus:outline-indigo-500"></select>
+          </label>
+        </div>
+
+        <div class="grid grid-cols-3 gap-2">
+          <button id="btn-open-timetable" class="active-scale rounded-lg bg-indigo-600 px-2 py-2.5 text-xs sm:text-sm font-black text-white whitespace-nowrap">
+            <i class="fa-solid fa-table-list mr-1"></i>查看時刻表
+          </button>
+          <button id="btn-plan" class="active-scale rounded-lg bg-emerald-600 px-2 py-2.5 text-xs sm:text-sm font-black text-white whitespace-nowrap">
+            <i class="fa-solid fa-clock mr-1"></i>推算班次
+          </button>
+          <button id="btn-save-trip" class="active-scale rounded-lg bg-slate-900 px-2 py-2.5 text-xs sm:text-sm font-black text-white whitespace-nowrap">
+            <i class="fa-solid fa-star mr-1"></i>儲存常用
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <section class="bg-white border border-slate-200 rounded-lg soft-shadow overflow-hidden">
+      <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between gap-3">
+        <div>
+          <h2 class="font-bold text-slate-950">班表預估</h2>
+          <p id="result-summary" class="text-xs text-slate-500 mt-0.5">選好路線與站牌後開始推算</p>
+        </div>
+        <div class="shrink-0 flex gap-2">
+          <details class="relative">
+            <summary class="active-scale list-none rounded-lg bg-indigo-50 px-3 py-2 text-xs font-black text-indigo-700 cursor-pointer" title="粗估設定">
+              <i class="fa-solid fa-sliders"></i>
+            </summary>
+            <div class="absolute right-0 top-11 z-20 w-72 rounded-lg border border-slate-200 bg-white p-3 shadow-xl space-y-3">
+              <p class="text-xs text-slate-500">
+                優先使用 TDX 每站時刻；只有缺少站牌時刻時才使用粗估。
+              </p>
+              <label class="space-y-1.5 block">
+                <span class="text-xs font-bold text-slate-600">粗估模式</span>
+                <select id="fallback-profile" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-indigo-500">
+                  <option value="2">市區短站距：每站約 2 分鐘</option>
+                  <option value="3" selected>一般路線：每站約 3 分鐘</option>
+                  <option value="5">郊區長站距：每站約 5 分鐘</option>
+                  <option value="custom">自訂</option>
+                </select>
+              </label>
+              <div class="grid grid-cols-2 gap-2">
+                <label class="space-y-1.5">
+                  <span class="text-xs font-bold text-slate-600">自訂分鐘</span>
+                  <input id="minutes-per-stop" type="number" min="1" step="0.5" value="3" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-indigo-500">
+                </label>
+                <label class="space-y-1.5">
+                  <span class="text-xs font-bold text-slate-600">班次數量</span>
+                  <input id="result-limit" type="number" min="3" max="30" value="3" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-indigo-500">
+                </label>
+              </div>
+            </div>
+          </details>
+          <button id="btn-earlier-trips" class="active-scale rounded-lg bg-slate-100 px-3 py-2 text-xs font-black text-slate-700">
+            <i class="fa-solid fa-chevron-left mr-1"></i>更早
+          </button>
+          <button id="btn-later-trips" class="active-scale rounded-lg bg-slate-900 px-3 py-2 text-xs font-black text-white">
+            更晚<i class="fa-solid fa-chevron-right ml-1"></i>
+          </button>
+        </div>
+      </div>
+      <div id="plan-results" class="p-4 space-y-3">
+        <div class="text-center text-sm text-slate-400 py-8">尚未產生推算結果</div>
+      </div>
+    </section>
+
+    <section class="bg-white border border-slate-200 rounded-lg soft-shadow overflow-hidden">
+      <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between gap-3">
+        <div>
+          <h2 class="font-bold text-slate-950">即時估算</h2>
+          <p id="realtime-summary" class="text-xs text-slate-500 mt-0.5">選好路線與站牌後，可用即時動態修正預估</p>
+        </div>
+        <button id="btn-realtime" class="active-scale shrink-0 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-black text-white">
+          <i class="fa-solid fa-satellite-dish mr-1"></i>更新即時
+        </button>
+      </div>
+      <div id="realtime-results" class="p-4 space-y-3">
+        <div class="text-center text-sm text-slate-400 py-8">尚未查詢即時動態</div>
+      </div>
+    </section>
+  </main>
+
+  <div id="timetable-modal" class="fixed inset-0 z-50 hidden bg-white overflow-y-auto no-scrollbar">
+    <div class="sticky top-0 z-10 bg-white/95 backdrop-blur border-b border-slate-200">
+      <div class="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
+        <div class="min-w-0">
+          <h2 class="font-bold text-slate-950">
+            <i class="fa-solid fa-table-list text-indigo-600 mr-2"></i>路線時刻表
+          </h2>
+          <p id="schedule-summary" class="text-xs text-slate-500 mt-0.5 truncate">選好路線後可直接查看該方向時刻表</p>
+        </div>
+        <button id="btn-close-timetable" class="active-scale h-10 w-10 shrink-0 rounded-full bg-slate-100 text-slate-700">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+    </div>
+    <div class="max-w-3xl mx-auto px-4 py-4 pb-24">
+      <div id="route-timetable" class="space-y-3">
+        <div class="text-center text-sm text-slate-400 py-8">尚未載入路線時刻表</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="fixed left-1/2 bottom-6 z-50 hidden -translate-x-1/2 rounded-full bg-slate-950 px-4 py-2 text-sm font-bold text-white shadow-xl"></div>
+
+  <script>
+    const TDX_CLIENT_ID = 'zonggi-44e05541-8e3e-4237';
+    const TDX_CLIENT_SECRET = '9084d0dd-feed-4d68-84f7-ce14df331f06';
+    const TOKEN_KEY = 'tdx_access_token_data_v2';
+    const SAVED_TRIPS_KEY = 'bus_trip_planner_saved_trips';
+
+    const cities = [
+      ['Taipei', '臺北市'], ['NewTaipei', '新北市'], ['Taoyuan', '桃園市'], ['Taichung', '臺中市'],
+      ['Tainan', '臺南市'], ['Kaohsiung', '高雄市'], ['Keelung', '基隆市'], ['Hsinchu', '新竹市'],
+      ['HsinchuCounty', '新竹縣'], ['MiaoliCounty', '苗栗縣'], ['ChanghuaCounty', '彰化縣'],
+      ['NantouCounty', '南投縣'], ['YunlinCounty', '雲林縣'], ['Chiayi', '嘉義市'],
+      ['ChiayiCounty', '嘉義縣'], ['PingtungCounty', '屏東縣'], ['YilanCounty', '宜蘭縣'],
+      ['HualienCounty', '花蓮縣'], ['TaitungCounty', '臺東縣'], ['KinmenCounty', '金門縣'],
+      ['PenghuCounty', '澎湖縣'], ['LienchiangCounty', '連江縣']
+    ];
+
+    const state = {
+      route: null,
+      directions: [],
+      schedules: [],
+      activeDirection: 0,
+      routeCache: new Map(),
+      availableRoutes: [],
+      filteredRoutes: []
+    };
+
+    const els = {};
+
+    document.addEventListener('DOMContentLoaded', () => {
+      bindElements();
+      initCitySelect();
+      setTomorrow();
+      bindEvents();
+      renderSavedTrips();
+      renderEmptyPlanner();
+    });
+
+    function bindElements() {
+      [
+        'connection-status', 'city-select', 'route-keyword', 'btn-search-route', 'btn-refresh-route',
+        'route-select', 'route-results', 'direction-tabs', 'selected-route-label', 'target-date', 'earliest-time',
+        'boarding-stop', 'btn-nearest-stop', 'nearest-stop-hint', 'arrival-stop', 'fallback-profile', 'minutes-per-stop', 'result-limit', 'btn-open-timetable', 'btn-plan',
+        'timetable-modal', 'btn-close-timetable', 'schedule-summary', 'route-timetable',
+        'btn-realtime', 'realtime-results', 'realtime-summary', 'btn-earlier-trips', 'btn-later-trips', 'btn-save-trip',
+        'plan-results', 'result-summary', 'saved-trip-select', 'btn-delete-saved-trip', 'toast'
+      ].forEach(id => els[toCamel(id)] = document.getElementById(id));
+    }
+
+    function toCamel(id) {
+      return id.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+    }
+
+    function initCitySelect() {
+      els.citySelect.innerHTML = cities.map(([value, label]) => `<option value="${value}">${label}</option>`).join('');
+      els.citySelect.value = 'Tainan';
+    }
+
+    function setTomorrow() {
+      const date = new Date();
+      date.setDate(date.getDate() + 1);
+      els.targetDate.value = date.toISOString().slice(0, 10);
+    }
+
+    function bindEvents() {
+      els.btnSearchRoute.addEventListener('click', loadRoutesForCity);
+      els.btnRefreshRoute.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        loadSelectedRoute(true);
+      });
+      els.citySelect.addEventListener('change', resetRoutePicker);
+      els.routeKeyword.addEventListener('input', renderRouteSelect);
+      els.routeKeyword.addEventListener('keydown', event => {
+        if (event.key === 'Enter' && !state.availableRoutes.length) loadRoutesForCity();
+      });
+      els.routeSelect.addEventListener('change', selectRouteFromDropdown);
+      els.btnOpenTimetable.addEventListener('click', openTimetableModal);
+      els.btnCloseTimetable.addEventListener('click', closeTimetableModal);
+      els.btnPlan.addEventListener('click', renderPlan);
+      els.btnRealtime.addEventListener('click', fetchRealtimeEstimate);
+      els.btnEarlierTrips.addEventListener('click', () => shiftTripWindow('earlier'));
+      els.btnLaterTrips.addEventListener('click', () => shiftTripWindow('later'));
+      els.btnNearestStop.addEventListener('click', selectNearestBoardingStop);
+      els.btnSaveTrip.addEventListener('click', saveCurrentTrip);
+      els.savedTripSelect.addEventListener('change', () => {
+        if (els.savedTripSelect.value) loadSavedTrip(els.savedTripSelect.value);
+      });
+      els.btnDeleteSavedTrip.addEventListener('click', () => {
+        if (!els.savedTripSelect.value) {
+          showToast('請先選擇常用行程');
+          return;
+        }
+        deleteSavedTrip(els.savedTripSelect.value);
+      });
+      els.boardingStop.addEventListener('change', keepDestinationAfterBoarding);
+      els.arrivalStop.addEventListener('change', () => {
+        renderPlan();
+        resetRealtimeResult();
+      });
+      els.targetDate.addEventListener('change', () => {
+        renderRouteTimetable();
+        renderPlan();
+      });
+      els.earliestTime.addEventListener('change', renderPlan);
+      els.fallbackProfile.addEventListener('change', () => {
+        if (els.fallbackProfile.value !== 'custom') {
+          els.minutesPerStop.value = els.fallbackProfile.value;
+        }
+        renderPlan();
+        resetRealtimeResult();
+      });
+      els.minutesPerStop.addEventListener('change', () => {
+        els.fallbackProfile.value = 'custom';
+        renderPlan();
+        resetRealtimeResult();
+      });
+      document.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && !els.timetableModal.classList.contains('hidden')) {
+          closeTimetableModal();
+        }
+      });
+    }
+
+    function setStatus(text, tone = 'slate', spinning = false) {
+      const colors = {
+        slate: 'bg-slate-100 text-slate-600',
+        green: 'bg-emerald-100 text-emerald-700',
+        red: 'bg-rose-100 text-rose-700',
+        amber: 'bg-amber-100 text-amber-700'
+      };
+      els.connectionStatus.className = `shrink-0 text-xs px-2.5 py-1 rounded-full font-semibold ${colors[tone]}`;
+      els.connectionStatus.innerHTML = `${spinning ? '<i class="fa-solid fa-spinner animate-spin mr-1"></i>' : ''}${escapeHtml(text)}`;
+    }
+
+    async function getTDXToken() {
+      const cached = localStorage.getItem(TOKEN_KEY);
+      if (cached) {
+        const tokenData = JSON.parse(cached);
+        if (Date.now() < tokenData.expiry) return tokenData.access_token;
+      }
+
+      setStatus('認證中', 'amber', true);
+      const params = new URLSearchParams();
+      params.append('grant_type', 'client_credentials');
+      params.append('client_id', TDX_CLIENT_ID);
+      params.append('client_secret', TDX_CLIENT_SECRET);
+
+      const response = await fetch('https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: params
+      });
+      if (!response.ok) throw new Error('TDX 認證失敗');
+      const data = await response.json();
+      localStorage.setItem(TOKEN_KEY, JSON.stringify({
+        access_token: data.access_token,
+        expiry: Date.now() + (20 * 60 * 1000)
+      }));
+      setStatus('已連線', 'green');
+      return data.access_token;
+    }
+
+    async function tdxFetch(url) {
+      const token = await getTDXToken();
+      const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (!response.ok) throw new Error(`TDX 查詢失敗 ${response.status}`);
+      setStatus('已連線', 'green');
+      return response.json();
+    }
+
+    async function loadRoutesForCity() {
+      const city = els.citySelect.value;
+
+      els.routeSelect.innerHTML = '<option value="">正在載入路線...</option>';
+      els.routeResults.innerHTML = loadingBlock('正在載入路線');
+
+      try {
+        const cacheKey = `routes:${city}`;
+        let routes = state.routeCache.get(cacheKey);
+        if (!routes) {
+          const url = `https://tdx.transportdata.tw/api/basic/v2/Bus/Route/City/${city}?$format=JSON`;
+          routes = await tdxFetch(url);
+          state.routeCache.set(cacheKey, routes);
+        }
+
+        state.availableRoutes = routes
+          .slice()
+          .sort((a, b) => naturalRouteCompare(getRouteName(a), getRouteName(b)));
+        renderRouteSelect();
+      } catch (error) {
+        console.error(error);
+        setStatus('連線失敗', 'red');
+        els.routeSelect.innerHTML = '<option value="">路線載入失敗</option>';
+        els.routeResults.innerHTML = errorBlock('路線載入失敗，請稍後再試');
+      }
+    }
+
+    function renderRouteSelect() {
+      if (!state.availableRoutes.length) {
+        els.routeSelect.innerHTML = '<option value="">請先載入縣市路線</option>';
+        els.routeResults.textContent = '選擇縣市後按「載入」，路線會以分組選單呈現。';
+        return;
+      }
+
+      const keyword = els.routeKeyword.value.trim();
+      const routes = state.availableRoutes.filter(route => includesRoute(route, keyword));
+      state.filteredRoutes = routes;
+
+      if (!routes.length) {
+        els.routeSelect.innerHTML = '<option value="">找不到相符路線</option>';
+        els.routeResults.textContent = `找不到「${keyword}」相符路線，請換一個關鍵字。`;
+        return;
+      }
+
+      const groups = groupRoutes(routes);
+      els.routeSelect.innerHTML = '<option value="">請選擇公車路線</option>' + groups.map(group => `
+        <optgroup label="${escapeHtml(group.label)}">
+          ${group.routes.map(route => routeOptionTemplate(route)).join('')}
+        </optgroup>
+      `).join('');
+      els.routeResults.textContent = keyword
+        ? `已從 ${state.availableRoutes.length} 條路線中篩選出 ${routes.length} 條。`
+        : `已載入 ${cityLabel(els.citySelect.value)} ${routes.length} 條路線，可直接從分組選單挑選。`;
+    }
+
+    function groupRoutes(routes) {
+      const groupOrder = ['數字路線', '幹線路線', '紅線', '藍線', '綠線', '棕線', '橘線', '黃線', '小巴/彈性路線', '其他路線'];
+      const groups = new Map(groupOrder.map(label => [label, []]));
+      routes.forEach(route => {
+        const label = routeGroupLabel(getRouteName(route));
+        if (!groups.has(label)) groups.set(label, []);
+        groups.get(label).push(route);
+      });
+      return [...groups.entries()]
+        .filter(([, groupRoutes]) => groupRoutes.length)
+        .map(([label, groupRoutes]) => ({ label, routes: groupRoutes }));
+    }
+
+    function routeGroupLabel(name) {
+      if (/^\d/.test(name)) return '數字路線';
+      if (name.includes('幹線')) return '幹線路線';
+      if (name.startsWith('紅')) return '紅線';
+      if (name.startsWith('藍')) return '藍線';
+      if (name.startsWith('綠')) return '綠線';
+      if (name.startsWith('棕')) return '棕線';
+      if (name.startsWith('橘')) return '橘線';
+      if (name.startsWith('黃')) return '黃線';
+      if (/^(小|微|F|H|T|市民)/i.test(name)) return '小巴/彈性路線';
+      return '其他路線';
+    }
+
+    function routeOptionTemplate(route) {
+      const index = state.filteredRoutes.indexOf(route);
+      const name = getRouteName(route);
+      const from = route.DepartureStopNameZh || route.DepartureStopNameEn || '起站未提供';
+      const to = route.DestinationStopNameZh || route.DestinationStopNameEn || '迄站未提供';
+      return `<option value="${index}">${escapeHtml(name)}｜${escapeHtml(from)} → ${escapeHtml(to)}</option>`;
+    }
+
+    function selectRouteFromDropdown() {
+      const index = Number(els.routeSelect.value);
+      if (!Number.isInteger(index) || index < 0) return;
+      const route = state.filteredRoutes[index];
+      if (!route) return;
+      const city = els.citySelect.value;
+      state.route = {
+        city,
+        cityLabel: cityLabel(city),
+        routeName: getRouteName(route),
+        routeId: route.RouteID || '',
+        departure: route.DepartureStopNameZh || route.DepartureStopNameEn || '',
+        destination: route.DestinationStopNameZh || route.DestinationStopNameEn || ''
+      };
+      loadSelectedRoute(false);
+    }
+
+    function resetRoutePicker() {
+      state.availableRoutes = [];
+      state.filteredRoutes = [];
+      els.routeKeyword.value = '';
+      els.routeSelect.innerHTML = '<option value="">請先載入縣市路線</option>';
+      els.routeResults.textContent = '選擇縣市後按「載入」，路線會以分組選單呈現。';
+    }
+
+    function includesRoute(route, keyword) {
+      if (!keyword) return true;
+      const target = [
+        getRouteName(route),
+        route.RouteID,
+        route.DepartureStopNameZh,
+        route.DestinationStopNameZh
+      ].join(' ').toLowerCase();
+      return target.includes(keyword.toLowerCase());
+    }
+
+    function naturalRouteCompare(a, b) {
+      return String(a).localeCompare(String(b), 'zh-Hant', { numeric: true, sensitivity: 'base' });
+    }
+
+    async function loadSelectedRoute(forceReload) {
+      if (!state.route) return;
+      els.btnRefreshRoute.classList.remove('hidden');
+      els.selectedRouteLabel.textContent = `${state.route.cityLabel} ${state.route.routeName}，正在載入站牌與班表`;
+      els.directionTabs.innerHTML = loadingBlock('載入中');
+      els.planResults.innerHTML = loadingBlock('載入路線資料');
+
+      try {
+        const encodedRoute = encodeURIComponent(state.route.routeName);
+        const stopUrl = `https://tdx.transportdata.tw/api/basic/v2/Bus/StopOfRoute/City/${state.route.city}/${encodedRoute}?$format=JSON`;
+        const scheduleUrl = `https://tdx.transportdata.tw/api/basic/v2/Bus/Schedule/City/${state.route.city}/${encodedRoute}?$format=JSON`;
+        const [stopData, scheduleData] = await Promise.all([
+          tdxFetch(stopUrl),
+          tdxFetch(scheduleUrl).catch(error => {
+            console.warn(error);
+            return [];
+          })
+        ]);
+
+        state.directions = normalizeDirections(stopData);
+        state.schedules = Array.isArray(scheduleData) ? scheduleData : [];
+        state.activeDirection = state.directions[0]?.direction ?? 0;
+
+        if (!state.directions.length) {
+          renderEmptyPlanner('查不到這條路線的站牌資料');
+          return;
+        }
+
+        renderDirectionTabs();
+        renderStopSelects();
+        renderRouteTimetable();
+        renderPlan();
+        resetRealtimeResult();
+        els.routeResults.classList.remove('hidden');
+        els.routeResults.textContent = `已選擇 ${state.route.cityLabel} ${state.route.routeName}，仍可從上方選單切換其他路線。`;
+        showToast(forceReload ? '已重新載入路線資料' : '已選擇路線');
+      } catch (error) {
+        console.error(error);
+        setStatus('連線失敗', 'red');
+        renderEmptyPlanner('路線資料載入失敗，請稍後再試');
+      }
+    }
+
+    function normalizeDirections(stopData) {
+      if (!Array.isArray(stopData)) return [];
+      return stopData
+        .filter(item => Array.isArray(item.Stops) && item.Stops.length)
+        .map(item => ({
+          direction: Number(item.Direction || 0),
+          label: Number(item.Direction || 0) === 0 ? '去程' : '返程',
+          stops: item.Stops
+            .slice()
+            .sort((a, b) => Number(a.StopSequence || 0) - Number(b.StopSequence || 0))
+            .map((stop, index) => ({
+              id: String(stop.StopID || stop.StopUID || index),
+              uid: String(stop.StopUID || stop.StopID || index),
+              name: getStopName(stop),
+              sequence: Number(stop.StopSequence || index + 1),
+              lat: Number(stop.StopPosition?.PositionLat ?? stop.StopPosition?.PositionLatLng?.PositionLat ?? stop.PositionLat),
+              lon: Number(stop.StopPosition?.PositionLon ?? stop.StopPosition?.PositionLatLng?.PositionLon ?? stop.PositionLon)
+            }))
+        }));
+    }
+
+    function renderDirectionTabs() {
+      if (!state.directions.length) {
+        els.directionTabs.innerHTML = '';
+        return;
+      }
+
+      els.directionTabs.innerHTML = `
+        <label class="space-y-1.5 block">
+          <span class="text-xs font-bold text-slate-600">方向</span>
+          <select id="direction-select" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm font-bold text-slate-700 focus:outline-indigo-500">
+            ${state.directions.map((dir, index) => `
+              <option value="${dir.direction}" ${dir.direction === state.activeDirection ? 'selected' : ''}>
+                ${escapeHtml(directionDisplayLabel(dir, index))}
+              </option>
+            `).join('')}
+          </select>
+        </label>
+      `;
+
+      document.getElementById('direction-select').addEventListener('change', event => {
+        state.activeDirection = Number(event.target.value);
+        renderDirectionTabs();
+        renderStopSelects();
+        renderRouteTimetable();
+        renderPlan();
+      });
+    }
+
+    function directionDisplayLabel(dir, index) {
+      const firstStop = dir.stops[0]?.name || '起點';
+      const lastStop = dir.stops[dir.stops.length - 1]?.name || '終點';
+      const baseLabel = Number(dir.direction) === 0 ? '去程' : Number(dir.direction) === 1 ? '返程' : `方向 ${index + 1}`;
+      return `${baseLabel}｜${firstStop} → ${lastStop}`;
+    }
+
+    function renderStopSelects() {
+      const direction = getActiveDirection();
+      if (!direction) return;
+      els.selectedRouteLabel.textContent = `${state.route.cityLabel} ${state.route.routeName}，${direction.label}`;
+      const options = direction.stops.map((stop, index) => `<option value="${index}">${index + 1}. ${escapeHtml(stop.name)}</option>`).join('');
+      els.boardingStop.innerHTML = options;
+      els.arrivalStop.innerHTML = options;
+      els.boardingStop.value = '0';
+      els.arrivalStop.value = String(Math.min(direction.stops.length - 1, 1));
+      updateNearestStopHint();
+      keepDestinationAfterBoarding(false);
+      resetRealtimeResult();
+    }
+
+    function updateNearestStopHint(message) {
+      if (!els.nearestStopHint || !getActiveDirection()) return;
+      if (message) {
+        els.nearestStopHint.textContent = message;
+        return;
+      }
+      const hasCoordinates = getActiveDirection().stops.some(hasStopCoordinates);
+      els.nearestStopHint.textContent = !window.isSecureContext
+        ? '定位需 HTTPS 或 localhost；file:// 或一般 http 不會跳權限提示'
+        : hasCoordinates
+        ? '可用定位優先選擇最接近的上車站'
+        : '這條路線站牌缺少座標，無法用定位選站';
+      const disabled = !hasCoordinates || !window.isSecureContext;
+      els.btnNearestStop.disabled = disabled;
+      els.btnNearestStop.classList.toggle('opacity-40', disabled);
+      els.btnNearestStop.classList.toggle('pointer-events-none', disabled);
+    }
+
+    function selectNearestBoardingStop() {
+      const direction = getActiveDirection();
+      if (!direction) {
+        showToast('請先選擇路線');
+        return;
+      }
+      if (!navigator.geolocation) {
+        updateNearestStopHint('此瀏覽器不支援定位');
+        showToast('此瀏覽器不支援定位');
+        return;
+      }
+      if (!window.isSecureContext) {
+        const reason = '定位需要 HTTPS 或 localhost，這個頁面不會跳權限提示';
+        updateNearestStopHint(reason);
+        showToast(reason);
+        return;
+      }
+
+      const stopsWithCoordinates = direction.stops
+        .map((stop, index) => ({ stop, index }))
+        .filter(item => hasStopCoordinates(item.stop));
+      if (!stopsWithCoordinates.length) {
+        updateNearestStopHint('這條路線站牌缺少座標，無法用定位選站');
+        return;
+      }
+
+      updateNearestStopHint('正在取得目前位置...');
+      els.btnNearestStop.disabled = true;
+      els.btnNearestStop.classList.add('opacity-60');
+
+      navigator.geolocation.getCurrentPosition(position => {
+        const userLat = position.coords.latitude;
+        const userLon = position.coords.longitude;
+        const nearest = stopsWithCoordinates
+          .map(item => ({
+            ...item,
+            distance: distanceMeters(userLat, userLon, item.stop.lat, item.stop.lon)
+          }))
+          .sort((a, b) => a.distance - b.distance)[0];
+
+        els.boardingStop.value = String(nearest.index);
+        keepDestinationAfterBoarding(true);
+        updateNearestStopHint(`已選最近站：${nearest.stop.name}，約 ${formatDistance(nearest.distance)}`);
+        els.btnNearestStop.disabled = false;
+        els.btnNearestStop.classList.remove('opacity-60');
+      }, error => {
+        const reason = geolocationErrorMessage(error);
+        updateNearestStopHint(reason);
+        showToast(reason);
+        els.btnNearestStop.disabled = false;
+        els.btnNearestStop.classList.remove('opacity-60');
+      }, {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 60000
+      });
+    }
+
+    function keepDestinationAfterBoarding(shouldRender = true) {
+      const direction = getActiveDirection();
+      if (!direction) return;
+      const boardIndex = Number(els.boardingStop.value);
+      if (Number(els.arrivalStop.value) <= boardIndex) {
+        els.arrivalStop.value = String(Math.min(direction.stops.length - 1, boardIndex + 1));
+      }
+      [...els.arrivalStop.options].forEach(option => {
+        option.disabled = Number(option.value) <= boardIndex;
+      });
+      if (shouldRender) renderPlan();
+      if (shouldRender) resetRealtimeResult();
+    }
+
+    function openTimetableModal() {
+      if (!state.route || !getActiveDirection()) {
+        showToast('請先選擇路線');
+        return;
+      }
+      renderRouteTimetable();
+      els.timetableModal.classList.remove('hidden');
+      document.body.classList.add('overflow-hidden');
+    }
+
+    function closeTimetableModal() {
+      els.timetableModal.classList.add('hidden');
+      document.body.classList.remove('overflow-hidden');
+    }
+
+    function renderRouteTimetable() {
+      if (!state.route || !getActiveDirection()) {
+        resetRouteTimetable();
+        return;
+      }
+
+      const direction = getActiveDirection();
+      const date = els.targetDate.value;
+      const entries = buildRouteTimetableEntries(direction, date);
+      els.scheduleSummary.textContent = `${state.route.cityLabel} ${state.route.routeName} ${direction.label}，${formatDate(date)}`;
+
+      if (!entries.length) {
+        els.routeTimetable.innerHTML = emptyBlock('這個日期沒有查到可顯示的路線時刻表。');
+        return;
+      }
+
+      const fixedEntries = entries.filter(entry => entry.type === 'fixed');
+      const frequencyEntries = entries.filter(entry => entry.type === 'frequency');
+      els.routeTimetable.innerHTML = `
+        ${fixedEntries.length ? `
+          <div class="rounded-lg border border-slate-200 overflow-hidden">
+            <div class="bg-slate-50 px-3 py-2 text-sm font-black text-slate-800">固定班次</div>
+            <div class="p-3 grid grid-cols-3 sm:grid-cols-5 gap-2">
+              ${fixedEntries.map(entry => `
+                <div class="rounded-lg bg-white border border-slate-200 px-2 py-2">
+                  <div class="text-base font-black text-slate-950">${formatMinutes(entry.minutes)}</div>
+                  <div class="text-[11px] font-bold text-slate-600">${escapeHtml(entry.label)}</div>
+                  <div class="text-[11px] text-slate-500 leading-snug">${escapeHtml(entry.originText)}</div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
+        ${frequencyEntries.length ? `
+          <div class="rounded-lg border border-amber-200 overflow-hidden">
+            <div class="bg-amber-50 px-3 py-2 text-sm font-black text-amber-800">班距營運</div>
+            <div class="divide-y divide-amber-100">
+              ${frequencyEntries.map(entry => `
+                <div class="p-3 flex items-center justify-between gap-3">
+                  <div>
+                    <div class="font-black text-slate-950">${formatMinutes(entry.start)} - ${formatMinutes(entry.end)}</div>
+                    <div class="text-xs text-slate-500">從 ${escapeHtml(entry.originStop)} 發車，約每 ${entry.headway} 分鐘一班</div>
+                  </div>
+                  <span class="rounded-full bg-amber-100 px-2 py-1 text-xs font-bold text-amber-700">班距</span>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
+      `;
+    }
+
+    function buildRouteTimetableEntries(direction, date) {
+      const schedules = state.schedules.filter(item => Number(item.Direction || 0) === direction.direction);
+      const weekday = weekdayName(date);
+      const entries = [];
+
+      schedules.forEach(schedule => {
+        const timetables = schedule.Timetables || schedule.TimeTables || [];
+        timetables.forEach((table, index) => {
+          if (!runsOnDate(table.ServiceDay || schedule.ServiceDay, weekday)) return;
+          const stopTimes = Array.isArray(table.StopTimes) ? table.StopTimes : [];
+          const firstTimedStop = firstKnownStopTime(stopTimes, direction);
+          const start = firstTimedStop?.minutes ?? parseTimeToMinutes(table.StartTime || table.DepartureTime || '');
+          if (start === null) return;
+          const originStop = firstTimedStop?.stopName || direction.stops[0]?.name || state.route.departure || '起站';
+          const hasStopTimes = !!firstTimedStop;
+          entries.push({
+            type: 'fixed',
+            minutes: start,
+            label: hasStopTimes ? 'TDX 站牌時刻' : '起站發車時間',
+            originText: hasStopTimes ? `${originStop} 的站牌時刻` : `從 ${originStop} 發車`,
+            sort: start + index / 1000
+          });
+        });
+
+        const frequencys = schedule.Frequencys || schedule.Frequencies || [];
+        frequencys.forEach((frequency, index) => {
+          if (!runsOnDate(frequency.ServiceDay || schedule.ServiceDay, weekday)) return;
+          const start = parseTimeToMinutes(frequency.StartTime || frequency.Start || '');
+          const end = parseTimeToMinutes(frequency.EndTime || frequency.End || '');
+          const headway = Number(frequency.HeadwayMins || frequency.MinHeadwayMins || frequency.MaxHeadwayMins || 0);
+          if (start === null || end === null || !headway) return;
+          entries.push({
+            type: 'frequency',
+            start,
+            end,
+            headway,
+            originStop: direction.stops[0]?.name || state.route.departure || '起站',
+            sort: start + index / 1000
+          });
+        });
+      });
+
+      return entries.sort((a, b) => a.sort - b.sort);
+    }
+
+    function resetRouteTimetable() {
+      if (!els.routeTimetable || !els.scheduleSummary) return;
+      els.scheduleSummary.textContent = '選好路線後可直接查看該方向時刻表';
+      els.routeTimetable.innerHTML = '<div class="text-center text-sm text-slate-400 py-8">尚未載入路線時刻表</div>';
+    }
+
+    async function fetchRealtimeEstimate() {
+      if (!state.route || !getActiveDirection()) {
+        showToast('請先選擇路線與站牌');
+        return;
+      }
+
+      const direction = getActiveDirection();
+      const boardIndex = Number(els.boardingStop.value);
+      const arrivalIndex = Number(els.arrivalStop.value);
+      if (arrivalIndex <= boardIndex) {
+        els.realtimeResults.innerHTML = errorBlock('目的站必須在上車站之後');
+        return;
+      }
+
+      const boardStop = direction.stops[boardIndex];
+      const arrivalStop = direction.stops[arrivalIndex];
+      els.realtimeSummary.textContent = `${boardStop.name} → ${arrivalStop.name}，正在讀取即時動態`;
+      els.realtimeResults.innerHTML = loadingBlock('正在查詢即時到站');
+      els.btnRealtime.disabled = true;
+      els.btnRealtime.classList.add('opacity-60');
+
+      try {
+        const encodedRoute = encodeURIComponent(state.route.routeName);
+        const url = `https://tdx.transportdata.tw/api/basic/v2/Bus/EstimatedTimeOfArrival/City/${state.route.city}/${encodedRoute}?$format=JSON`;
+        const data = await tdxFetch(url);
+        const directionEtas = data.filter(item => Number(item.Direction || 0) === direction.direction);
+        const boardingEtas = directionEtas
+          .filter(item => sameStop(item, boardStop))
+          .sort((a, b) => normalizeEstimateSeconds(a) - normalizeEstimateSeconds(b));
+        const arrivalEtas = directionEtas
+          .filter(item => sameStop(item, arrivalStop))
+          .sort((a, b) => normalizeEstimateSeconds(a) - normalizeEstimateSeconds(b));
+
+        const boardingEta = boardingEtas.find(isUsableEta) || boardingEtas[0];
+        if (!boardingEta) {
+          els.realtimeResults.innerHTML = emptyBlock('目前查不到這個上車站的即時到站資料。');
+          els.realtimeSummary.textContent = '即時資料暫無回傳';
+          return;
+        }
+
+        const estimate = buildRealtimeEstimate(boardingEta, arrivalEtas, direction, boardIndex, arrivalIndex);
+        renderRealtimeEstimate(estimate, direction, boardIndex, arrivalIndex);
+      } catch (error) {
+        console.error(error);
+        setStatus('連線失敗', 'red');
+        els.realtimeResults.innerHTML = errorBlock('即時動態查詢失敗，請稍後再試');
+        els.realtimeSummary.textContent = '即時資料查詢失敗';
+      } finally {
+        els.btnRealtime.disabled = false;
+        els.btnRealtime.classList.remove('opacity-60');
+      }
+    }
+
+    function buildRealtimeEstimate(boardingEta, arrivalEtas, direction, boardIndex, arrivalIndex) {
+      const boardSeconds = normalizeEstimateSeconds(boardingEta);
+      const arrivalMatch = findMatchedArrivalEta(boardingEta, arrivalEtas);
+      const matchedArrivalSeconds = arrivalMatch ? normalizeEstimateSeconds(arrivalMatch.eta) : Infinity;
+
+      if (isUsableEta(boardingEta) && arrivalMatch && matchedArrivalSeconds >= boardSeconds) {
+        const vehicleText = vehicleLabel(boardingEta);
+        return {
+          boardSeconds,
+          arrivalSeconds: matchedArrivalSeconds,
+          statusText: realtimeStatusText(boardingEta, boardSeconds),
+          method: arrivalMatch.confirmedVehicle ? '同車即時 ETA' : '雙站即時 ETA',
+          confidence: 'best',
+          note: arrivalMatch.confirmedVehicle
+            ? `上車站與目的站使用同一台車的 TDX 即時 ETA${vehicleText ? `（${vehicleText}）` : ''}。`
+            : 'TDX 未提供可確認同車的車輛識別，改用目的站下一筆晚於上車站的即時 ETA。'
+        };
+      }
+
+      const timetableRideMinutes = findRealtimeRideMinutesFromStopTimes(direction, boardIndex, arrivalIndex, boardSeconds);
+      if (isUsableEta(boardingEta) && timetableRideMinutes !== null) {
+        return {
+          boardSeconds,
+          arrivalSeconds: boardSeconds + Math.round(timetableRideMinutes * 60),
+          statusText: realtimeStatusText(boardingEta, boardSeconds),
+          method: '即時 + TDX 站間時刻',
+          confidence: 'good',
+          note: `上車時間使用 TDX 即時到站；目的站以 StopTimes 站間時間 ${formatDuration(timetableRideMinutes)} 推算。`
+        };
+      }
+
+      const fallbackMinutes = Math.max(0, arrivalIndex - boardIndex) * getFallbackMinutes();
+      return {
+        boardSeconds,
+        arrivalSeconds: boardSeconds === Infinity ? Infinity : boardSeconds + Math.round(fallbackMinutes * 60),
+        statusText: realtimeStatusText(boardingEta, boardSeconds),
+        method: '即時 + 粗估',
+        confidence: 'fallback',
+        note: boardSeconds === Infinity
+          ? '目前沒有可用的秒數預估，先顯示 TDX 回傳狀態。'
+          : `上車時間使用 TDX 即時到站；目的站暫用「${getFallbackLabel()}」粗估，約 ${formatDuration(fallbackMinutes)}。`
+      };
+    }
+
+    function renderRealtimeEstimate(estimate, direction, boardIndex, arrivalIndex) {
+      const boardStop = direction.stops[boardIndex];
+      const arrivalStop = direction.stops[arrivalIndex];
+      const now = new Date();
+      const hasUsableTime = estimate.boardSeconds !== Infinity;
+      const hasArrivalTime = estimate.arrivalSeconds !== Infinity;
+      const boardAt = hasUsableTime ? new Date(now.getTime() + estimate.boardSeconds * 1000) : null;
+      const arriveAt = hasArrivalTime ? new Date(now.getTime() + estimate.arrivalSeconds * 1000) : null;
+      const badgeClass = estimate.confidence === 'best'
+        ? 'bg-emerald-100 text-emerald-700'
+        : estimate.confidence === 'good'
+          ? 'bg-sky-100 text-sky-700'
+          : 'bg-amber-100 text-amber-700';
+
+      els.realtimeSummary.textContent = `${boardStop.name} → ${arrivalStop.name}，更新於 ${formatClock(now)}`;
+      els.realtimeResults.innerHTML = `
+        <div class="rounded-lg border border-indigo-100 bg-indigo-50 p-4">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <div class="text-xs font-bold text-indigo-700">下一班到上車站</div>
+              <div class="text-2xl font-black text-indigo-700">${escapeHtml(estimate.statusText)}</div>
+            </div>
+            <span class="rounded-full px-2 py-1 text-xs font-bold ${badgeClass}">${escapeHtml(estimate.method)}</span>
+          </div>
+          <div class="mt-4 grid grid-cols-2 gap-3">
+            <div class="rounded-lg bg-white p-3">
+              <div class="text-xs text-slate-500">預估上車</div>
+              <div class="text-xl font-black text-slate-950">${hasUsableTime ? formatClock(boardAt) : '--:--'}</div>
+            </div>
+            <div class="rounded-lg bg-white p-3">
+              <div class="text-xs text-slate-500">預估到達</div>
+              <div class="text-xl font-black text-emerald-700">${hasArrivalTime ? formatClock(arriveAt) : '--:--'}</div>
+            </div>
+          </div>
+          <div class="mt-3 text-xs text-slate-500">
+            ${escapeHtml(estimate.note)}
+          </div>
+        </div>
+      `;
+    }
+
+    function resetRealtimeResult() {
+      if (!els.realtimeResults || !els.realtimeSummary) return;
+      els.realtimeSummary.textContent = state.route
+        ? '站牌或路線已更新，可重新查詢即時動態'
+        : '選好路線與站牌後，可用即時動態修正預估';
+      els.realtimeResults.innerHTML = '<div class="text-center text-sm text-slate-400 py-8">尚未查詢即時動態</div>';
+    }
+
+    function renderPlan() {
+      if (!state.route || !getActiveDirection()) {
+        renderEmptyPlanner();
+        return;
+      }
+
+      const direction = getActiveDirection();
+      const boardIndex = Number(els.boardingStop.value);
+      const arrivalIndex = Number(els.arrivalStop.value);
+      if (arrivalIndex <= boardIndex) {
+        els.planResults.innerHTML = errorBlock('目的站必須在上車站之後');
+        return;
+      }
+
+      const date = els.targetDate.value;
+      const earliest = parseTimeToMinutes(els.earliestTime.value || '00:00');
+      const avgMinutes = getFallbackMinutes();
+      const limit = Math.max(3, Math.min(30, Number(els.resultLimit.value || 8)));
+      const allTrips = buildTrips(direction, boardIndex, arrivalIndex, date, 0, avgMinutes);
+      const trips = allTrips.filter(trip => trip.boardMinutes >= earliest).slice(0, limit);
+
+      const boardStop = direction.stops[boardIndex];
+      const arrivalStop = direction.stops[arrivalIndex];
+      els.resultSummary.textContent = `${boardStop.name} → ${arrivalStop.name}，${formatDate(date)} ${els.earliestTime.value || '00:00'} 後`;
+      updateTripWindowButtons(allTrips, trips, earliest);
+
+      if (!trips.length) {
+        els.planResults.innerHTML = emptyBlock('這個時段沒有找到可用班次。可改早一點，或檢查該路線是否提供班表。');
+        return;
+      }
+
+      els.planResults.innerHTML = trips.map(tripTemplate).join('');
+    }
+
+    function shiftTripWindow(directionName) {
+      if (!state.route || !getActiveDirection()) {
+        showToast('請先選擇路線');
+        return;
+      }
+
+      const direction = getActiveDirection();
+      const boardIndex = Number(els.boardingStop.value);
+      const arrivalIndex = Number(els.arrivalStop.value);
+      const date = els.targetDate.value;
+      const avgMinutes = getFallbackMinutes();
+      const limit = Math.max(3, Math.min(30, Number(els.resultLimit.value || 8)));
+      const currentEarliest = parseTimeToMinutes(els.earliestTime.value || '00:00');
+      const allTrips = buildTrips(direction, boardIndex, arrivalIndex, date, 0, avgMinutes);
+      if (!allTrips.length) {
+        showToast('目前沒有可切換的班次');
+        return;
+      }
+
+      let nextMinutes = currentEarliest;
+      if (directionName === 'later') {
+        const visibleTrips = allTrips.filter(trip => trip.boardMinutes >= currentEarliest).slice(0, limit);
+        const lastVisible = visibleTrips[visibleTrips.length - 1];
+        const laterTrip = allTrips.find(trip => lastVisible && trip.boardMinutes > lastVisible.boardMinutes);
+        if (!laterTrip) {
+          showToast('已經是最晚一批班次');
+          return;
+        }
+        nextMinutes = laterTrip.boardMinutes;
+      } else {
+        const earlierTrips = allTrips.filter(trip => trip.boardMinutes < currentEarliest);
+        if (!earlierTrips.length) {
+          showToast('已經是最早一批班次');
+          return;
+        }
+        const startIndex = Math.max(0, earlierTrips.length - limit);
+        nextMinutes = earlierTrips[startIndex].boardMinutes;
+      }
+
+      els.earliestTime.value = formatTimeInput(nextMinutes);
+      renderPlan();
+    }
+
+    function updateTripWindowButtons(allTrips, trips, earliest) {
+      if (!els.btnEarlierTrips || !els.btnLaterTrips) return;
+      const hasEarlier = allTrips.some(trip => trip.boardMinutes < earliest);
+      const lastVisible = trips[trips.length - 1];
+      const hasLater = !!lastVisible && allTrips.some(trip => trip.boardMinutes > lastVisible.boardMinutes);
+      setButtonDisabled(els.btnEarlierTrips, !hasEarlier);
+      setButtonDisabled(els.btnLaterTrips, !hasLater);
+    }
+
+    function buildTrips(direction, boardIndex, arrivalIndex, date, earliest, avgMinutes) {
+      const schedules = state.schedules.filter(item => Number(item.Direction || 0) === direction.direction);
+      const trips = [];
+      const weekday = weekdayName(date);
+
+      schedules.forEach(schedule => {
+        const timetables = schedule.Timetables || schedule.TimeTables || [];
+        timetables.forEach((table, index) => {
+          if (!runsOnDate(table.ServiceDay || schedule.ServiceDay, weekday)) return;
+          const trip = buildTripFromTimetable(table, direction, boardIndex, arrivalIndex, avgMinutes, index);
+          if (trip && trip.boardMinutes >= earliest) trips.push(trip);
+        });
+
+        const frequencys = schedule.Frequencys || schedule.Frequencies || [];
+        frequencys.forEach((frequency, index) => {
+          trips.push(...buildTripsFromFrequency(frequency, direction, boardIndex, arrivalIndex, avgMinutes, earliest, index));
+        });
+      });
+
+      return trips.sort((a, b) => a.boardMinutes - b.boardMinutes);
+    }
+
+    function buildTripFromTimetable(table, direction, boardIndex, arrivalIndex, avgMinutes, index) {
+      const stopTimes = Array.isArray(table.StopTimes) ? table.StopTimes : [];
+      const boardStop = direction.stops[boardIndex];
+      const arrivalStop = direction.stops[arrivalIndex];
+      const boardTime = findStopTime(stopTimes, boardStop, boardIndex);
+      const arrivalTime = findStopTime(stopTimes, arrivalStop, arrivalIndex);
+
+      if (boardTime && arrivalTime) {
+        let boardMinutes = parseStopTime(boardTime);
+        let arrivalMinutes = parseStopTime(arrivalTime);
+        if (arrivalMinutes < boardMinutes) arrivalMinutes += 1440;
+        return {
+          start: firstKnownTime(stopTimes) || boardMinutes,
+          boardMinutes,
+          arrivalMinutes,
+          source: '班表時間',
+          confidence: 'exact',
+          note: '優先使用 TDX StopTimes，每站時刻由資料來源提供'
+        };
+      }
+
+      const startMinutes = firstKnownTime(stopTimes) ?? parseTimeToMinutes(table.StartTime || table.DepartureTime || '');
+      if (startMinutes === null) return null;
+      const fallbackLabel = getFallbackLabel();
+      const boardMinutes = startMinutes + Math.max(0, boardIndex) * avgMinutes;
+      const arrivalMinutes = startMinutes + Math.max(0, arrivalIndex) * avgMinutes;
+      return {
+        start: startMinutes,
+        boardMinutes,
+        arrivalMinutes,
+        source: '粗估 fallback',
+        confidence: 'fallback',
+        note: `此班表缺少可用 StopTimes，暫用「${fallbackLabel}」粗估`
+      };
+    }
+
+    function buildTripsFromFrequency(frequency, direction, boardIndex, arrivalIndex, avgMinutes, earliest, index) {
+      const start = parseTimeToMinutes(frequency.StartTime || frequency.Start || '');
+      const end = parseTimeToMinutes(frequency.EndTime || frequency.End || '');
+      const headway = Number(frequency.HeadwayMins || frequency.MinHeadwayMins || frequency.MaxHeadwayMins || 0);
+      if (start === null || end === null || !headway) return [];
+
+      const trips = [];
+      for (let minutes = start; minutes <= end; minutes += headway) {
+        const boardMinutes = minutes + boardIndex * avgMinutes;
+        if (boardMinutes < earliest) continue;
+        trips.push({
+          start: minutes,
+          boardMinutes,
+          arrivalMinutes: minutes + arrivalIndex * avgMinutes,
+          source: '班距 + 粗估',
+          confidence: 'frequency',
+          note: `TDX 提供班距約每 ${headway} 分鐘一班；站間時間用「${getFallbackLabel()}」粗估`
+        });
+      }
+      return trips;
+    }
+
+    function tripTemplate(trip) {
+      const badge = trip.confidence === 'exact'
+        ? '<span class="bg-emerald-100 text-emerald-700">TDX 站牌時刻</span>'
+        : trip.confidence === 'frequency'
+          ? '<span class="bg-sky-100 text-sky-700">班距資料</span>'
+          : '<span class="bg-amber-100 text-amber-700">粗估</span>';
+      return `
+        <div class="rounded-lg border border-slate-200 bg-white p-4">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <div class="text-xs text-slate-500">起站發車</div>
+              <div class="text-lg font-black text-slate-950">${formatMinutes(trip.start)}</div>
+            </div>
+            <div class="text-center">
+              <div class="text-xs text-slate-500">上車</div>
+              <div class="text-2xl font-black text-indigo-600">${formatMinutes(trip.boardMinutes)}</div>
+            </div>
+            <div class="text-right">
+              <div class="text-xs text-slate-500">到達</div>
+              <div class="text-lg font-black text-emerald-700">${formatMinutes(trip.arrivalMinutes)}</div>
+            </div>
+          </div>
+          <div class="mt-3 flex items-center justify-between gap-3 text-xs">
+            <div class="text-slate-500">${escapeHtml(trip.note)}</div>
+            <div class="font-bold rounded-full px-2 py-1">${badge}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    function saveCurrentTrip() {
+      if (!state.route || !getActiveDirection()) {
+        showToast('請先選擇路線');
+        return;
+      }
+      const direction = getActiveDirection();
+      const boardIndex = Number(els.boardingStop.value);
+      const arrivalIndex = Number(els.arrivalStop.value);
+      const trip = {
+        id: `trip_${Date.now()}`,
+        route: state.route,
+        direction: state.activeDirection,
+        boardStopId: direction.stops[boardIndex].id,
+        arrivalStopId: direction.stops[arrivalIndex].id,
+        boardStopName: direction.stops[boardIndex].name,
+        arrivalStopName: direction.stops[arrivalIndex].name
+      };
+      const trips = getSavedTrips();
+      trips.unshift(trip);
+      localStorage.setItem(SAVED_TRIPS_KEY, JSON.stringify(trips.slice(0, 12)));
+      renderSavedTrips();
+      showToast('已儲存常用行程');
+    }
+
+    function renderSavedTrips() {
+      const trips = getSavedTrips();
+      if (!els.savedTripSelect) return;
+      if (!trips.length) {
+        els.savedTripSelect.innerHTML = '<option value="">尚無常用行程</option>';
+        els.btnDeleteSavedTrip.disabled = true;
+        els.btnDeleteSavedTrip.classList.add('opacity-40', 'pointer-events-none');
+        return;
+      }
+      els.savedTripSelect.innerHTML = '<option value="">常用行程</option>' + trips.map(trip => `
+        <option value="${trip.id}">${escapeHtml(trip.route.cityLabel)} ${escapeHtml(trip.route.routeName)}｜${escapeHtml(trip.boardStopName)} → ${escapeHtml(trip.arrivalStopName)}</option>
+      `).join('');
+      els.btnDeleteSavedTrip.disabled = false;
+      els.btnDeleteSavedTrip.classList.remove('opacity-40', 'pointer-events-none');
+    }
+
+    async function loadSavedTrip(id) {
+      const trip = getSavedTrips().find(item => item.id === id);
+      if (!trip) return;
+      state.route = trip.route;
+      await loadSelectedRoute(false);
+      state.activeDirection = Number(trip.direction);
+      renderDirectionTabs();
+      renderStopSelects();
+      const direction = getActiveDirection();
+      const boardIndex = direction.stops.findIndex(stop => stop.id === trip.boardStopId);
+      const arrivalIndex = direction.stops.findIndex(stop => stop.id === trip.arrivalStopId);
+      if (boardIndex >= 0) els.boardingStop.value = String(boardIndex);
+      if (arrivalIndex >= 0) els.arrivalStop.value = String(arrivalIndex);
+      keepDestinationAfterBoarding(false);
+      renderPlan();
+      els.savedTripSelect.value = id;
+    }
+
+    function deleteSavedTrip(id) {
+      const trips = getSavedTrips().filter(item => item.id !== id);
+      localStorage.setItem(SAVED_TRIPS_KEY, JSON.stringify(trips));
+      renderSavedTrips();
+      showToast('已刪除常用行程');
+    }
+
+    function getSavedTrips() {
+      try {
+        return JSON.parse(localStorage.getItem(SAVED_TRIPS_KEY) || '[]');
+      } catch {
+        return [];
+      }
+    }
+
+    function getActiveDirection() {
+      return state.directions.find(item => item.direction === state.activeDirection) || state.directions[0];
+    }
+
+    function findStopTime(stopTimes, stop, fallbackIndex) {
+      return stopTimes.find(item => {
+        const stopId = String(item.StopID || item.StopUID || '');
+        const sequence = Number(item.StopSequence || 0);
+        return stopId === stop.id || stopId === stop.uid || sequence === stop.sequence || sequence === fallbackIndex + 1;
+      });
+    }
+
+    function firstKnownTime(stopTimes) {
+      if (!stopTimes.length) return null;
+      for (const item of stopTimes) {
+        const minutes = parseStopTime(item);
+        if (minutes !== null) return minutes;
+      }
+      return null;
+    }
+
+    function firstKnownStopTime(stopTimes, direction) {
+      if (!stopTimes.length) return null;
+      for (const item of stopTimes) {
+        const minutes = parseStopTime(item);
+        if (minutes === null) continue;
+        const stopId = String(item.StopID || item.StopUID || '');
+        const sequence = Number(item.StopSequence || 0);
+        const matchedStop = direction.stops.find(stop =>
+          stop.id === stopId ||
+          stop.uid === stopId ||
+          (sequence && stop.sequence === sequence)
+        );
+        return {
+          minutes,
+          stopName: matchedStop?.name || getStopName(item) || '站牌'
+        };
+      }
+      return null;
+    }
+
+    function parseStopTime(item) {
+      return parseTimeToMinutes(item.DepartureTime || item.ArrivalTime || item.Time || '');
+    }
+
+    function sameStop(item, stop) {
+      const stopId = String(item.StopID || item.StopUID || '');
+      const stopName = item.StopName?.Zh_tw || item.StopName?.En || item.StopName || '';
+      return stopId === stop.id || stopId === stop.uid || stopName === stop.name;
+    }
+
+    function isUsableEta(item) {
+      return Number(item?.StopStatus || 0) === 0 && normalizeEstimateSeconds(item) !== Infinity;
+    }
+
+    function vehicleKey(item) {
+      return String(
+        item?.PlateNumb ||
+        item?.PlateNumber ||
+        item?.VehicleID ||
+        item?.VehicleUID ||
+        item?.BusID ||
+        item?.TripID ||
+        ''
+      ).trim();
+    }
+
+    function vehicleLabel(item) {
+      const key = vehicleKey(item);
+      return key ? `車輛 ${key}` : '';
+    }
+
+    function findMatchedArrivalEta(boardingEta, arrivalEtas) {
+      const key = vehicleKey(boardingEta);
+      const usableArrivalEtas = arrivalEtas.filter(isUsableEta);
+      if (key) {
+        const matched = usableArrivalEtas.find(item => vehicleKey(item) === key);
+        if (matched) return { eta: matched, confirmedVehicle: true };
+      }
+      const boardSeconds = normalizeEstimateSeconds(boardingEta);
+      const nextArrival = usableArrivalEtas.find(item => normalizeEstimateSeconds(item) >= boardSeconds);
+      return nextArrival ? { eta: nextArrival, confirmedVehicle: false } : null;
+    }
+
+    function findRealtimeRideMinutesFromStopTimes(direction, boardIndex, arrivalIndex, boardSeconds) {
+      const today = new Date().toISOString().slice(0, 10);
+      const weekday = weekdayName(today);
+      const schedules = state.schedules.filter(item => Number(item.Direction || 0) === direction.direction);
+      const boardStop = direction.stops[boardIndex];
+      const arrivalStop = direction.stops[arrivalIndex];
+      const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes();
+      const predictedBoardMinutes = boardSeconds === Infinity ? null : nowMinutes + Math.round(boardSeconds / 60);
+
+      const candidates = [];
+      schedules.forEach(schedule => {
+        const timetables = schedule.Timetables || schedule.TimeTables || [];
+        timetables.forEach(table => {
+          if (!runsOnDate(table.ServiceDay || schedule.ServiceDay, weekday)) return;
+          const stopTimes = Array.isArray(table.StopTimes) ? table.StopTimes : [];
+          const boardTime = findStopTime(stopTimes, boardStop, boardIndex);
+          const arrivalTime = findStopTime(stopTimes, arrivalStop, arrivalIndex);
+          if (!boardTime || !arrivalTime) return;
+          const boardMinutes = parseStopTime(boardTime);
+          let arrivalMinutes = parseStopTime(arrivalTime);
+          if (boardMinutes === null || arrivalMinutes === null) return;
+          if (arrivalMinutes < boardMinutes) arrivalMinutes += 1440;
+          const rideMinutes = arrivalMinutes - boardMinutes;
+          if (rideMinutes <= 0) return;
+          const closeness = predictedBoardMinutes === null ? 0 : Math.abs(boardMinutes - predictedBoardMinutes);
+          candidates.push({ rideMinutes, closeness });
+        });
+      });
+
+      if (!candidates.length) return null;
+      candidates.sort((a, b) => a.closeness - b.closeness);
+      return candidates[0].rideMinutes;
+    }
+
+    function normalizeEstimateSeconds(item) {
+      if (typeof item.EstimateTime === 'number' && item.EstimateTime >= 0) return item.EstimateTime;
+      if (typeof item.EstimateTime === 'string' && item.EstimateTime !== '') {
+        const parsed = Number(item.EstimateTime);
+        if (!Number.isNaN(parsed) && parsed >= 0) return parsed;
+      }
+      if (typeof item.NextBusTime === 'string') {
+        const next = new Date(item.NextBusTime);
+        if (!Number.isNaN(next.getTime())) return Math.max(0, Math.round((next.getTime() - Date.now()) / 1000));
+      }
+      return Infinity;
+    }
+
+    function realtimeStatusText(item, estimateSeconds) {
+      const status = Number(item.StopStatus || 0);
+      if (status === 1) return '尚未發車';
+      if (status === 2) return '交管不停靠';
+      if (status === 3) return '末班已過';
+      if (status === 4) return '今日未營運';
+      if (estimateSeconds === Infinity) return '暫無預估';
+      const minutes = Math.round(estimateSeconds / 60);
+      if (minutes <= 1) return '進站中';
+      return `約 ${minutes} 分鐘`;
+    }
+
+    function parseTimeToMinutes(value) {
+      if (!value || typeof value !== 'string') return null;
+      const parts = value.split(':').map(Number);
+      if (parts.length < 2 || Number.isNaN(parts[0]) || Number.isNaN(parts[1])) return null;
+      return parts[0] * 60 + parts[1];
+    }
+
+    function getFallbackMinutes() {
+      const selected = els.fallbackProfile?.value || '3';
+      const rawMinutes = selected === 'custom' ? Number(els.minutesPerStop.value) : Number(selected);
+      if (Number.isNaN(rawMinutes)) return 3;
+      return Math.max(1, Math.min(15, rawMinutes));
+    }
+
+    function getFallbackLabel() {
+      const selected = els.fallbackProfile?.value || '3';
+      if (selected === '2') return '市區短站距，每站約 2 分鐘';
+      if (selected === '3') return '一般路線，每站約 3 分鐘';
+      if (selected === '5') return '郊區長站距，每站約 5 分鐘';
+      return `自訂每站約 ${getFallbackMinutes()} 分鐘`;
+    }
+
+    function formatMinutes(value) {
+      if (value === null || value === undefined || Number.isNaN(value)) return '--:--';
+      const minutes = Math.round(value);
+      const dayOffset = Math.floor(minutes / 1440);
+      const normalized = ((minutes % 1440) + 1440) % 1440;
+      const hh = String(Math.floor(normalized / 60)).padStart(2, '0');
+      const mm = String(normalized % 60).padStart(2, '0');
+      return `${hh}:${mm}${dayOffset ? ' +1' : ''}`;
+    }
+
+    function formatTimeInput(value) {
+      const minutes = Math.round(value);
+      const normalized = ((minutes % 1440) + 1440) % 1440;
+      const hh = String(Math.floor(normalized / 60)).padStart(2, '0');
+      const mm = String(normalized % 60).padStart(2, '0');
+      return `${hh}:${mm}`;
+    }
+
+    function setButtonDisabled(button, disabled) {
+      button.disabled = disabled;
+      button.classList.toggle('opacity-40', disabled);
+      button.classList.toggle('pointer-events-none', disabled);
+    }
+
+    function formatClock(date) {
+      return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+    }
+
+    function formatDuration(minutes) {
+      const rounded = Math.max(0, Math.round(minutes));
+      return `${rounded} 分鐘`;
+    }
+
+    function hasStopCoordinates(stop) {
+      return Number.isFinite(stop?.lat) && Number.isFinite(stop?.lon);
+    }
+
+    function distanceMeters(lat1, lon1, lat2, lon2) {
+      const earthRadius = 6371000;
+      const toRadians = value => value * Math.PI / 180;
+      const dLat = toRadians(lat2 - lat1);
+      const dLon = toRadians(lon2 - lon1);
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      return earthRadius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    function formatDistance(meters) {
+      if (meters >= 1000) return `${(meters / 1000).toFixed(1)} 公里`;
+      return `${Math.round(meters)} 公尺`;
+    }
+
+    function geolocationErrorMessage(error) {
+      if (error.code === error.PERMISSION_DENIED) {
+        if (!window.isSecureContext) return '定位需要 HTTPS 或 localhost，這個頁面不會跳權限提示';
+        return '定位權限被瀏覽器封鎖，請到瀏覽器或系統設定允許位置';
+      }
+      if (error.code === error.POSITION_UNAVAILABLE) return '目前裝置無法取得位置，請確認定位服務已開啟';
+      if (error.code === error.TIMEOUT) return '定位逾時，請到戶外或稍後再試';
+      return '無法取得目前位置';
+    }
+
+    function weekdayName(dateValue) {
+      const date = new Date(`${dateValue}T12:00:00`);
+      return ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][date.getDay()];
+    }
+
+    function runsOnDate(serviceDay, weekday) {
+      if (!serviceDay) return true;
+      const value = serviceDay[weekday];
+      return value === undefined || value === 1 || value === true || value === '1';
+    }
+
+    function getRouteName(route) {
+      return route?.RouteName?.Zh_tw || route?.RouteName?.En || route?.RouteName || route?.RouteID || '';
+    }
+
+    function getStopName(stop) {
+      return stop?.StopName?.Zh_tw || stop?.StopName?.En || stop?.StopName || '未命名站牌';
+    }
+
+    function cityLabel(value) {
+      return cities.find(([city]) => city === value)?.[1] || value;
+    }
+
+    function formatDate(value) {
+      const date = new Date(`${value}T12:00:00`);
+      return `${date.getMonth() + 1}/${date.getDate()}（${'日一二三四五六'[date.getDay()]}）`;
+    }
+
+    function renderEmptyPlanner(message = '請先查詢並選擇一條路線') {
+      els.selectedRouteLabel.textContent = message;
+      els.directionTabs.innerHTML = '';
+      els.boardingStop.innerHTML = '<option>尚未載入站牌</option>';
+      els.arrivalStop.innerHTML = '<option>尚未載入站牌</option>';
+      els.resultSummary.textContent = '選好路線與站牌後開始推算';
+      els.planResults.innerHTML = `<div class="text-center text-sm text-slate-400 py-8">${escapeHtml(message)}</div>`;
+      resetRealtimeResult();
+    }
+
+    function loadingBlock(text) {
+      return `<div class="text-center text-sm text-slate-500 py-6"><i class="fa-solid fa-spinner animate-spin mr-2"></i>${escapeHtml(text)}</div>`;
+    }
+
+    function emptyBlock(text) {
+      return `<div class="text-center text-sm text-slate-400 py-8">${escapeHtml(text)}</div>`;
+    }
+
+    function errorBlock(text) {
+      return `<div class="rounded-lg bg-rose-50 border border-rose-100 text-rose-700 text-sm p-3">${escapeHtml(text)}</div>`;
+    }
+
+    function showToast(message) {
+      els.toast.textContent = message;
+      els.toast.classList.remove('hidden');
+      clearTimeout(showToast.timer);
+      showToast.timer = setTimeout(() => els.toast.classList.add('hidden'), 1800);
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+  </script>
+</body>
+</html>
